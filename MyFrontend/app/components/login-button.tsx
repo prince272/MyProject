@@ -8,6 +8,7 @@ import {
   useDisclosure,
 } from "@nextui-org/modal";
 import { Button } from "@nextui-org/button";
+import { Card, CardBody, CardHeader, CardFooter } from "@nextui-org/card";
 import { Input } from "@nextui-org/input";
 import axios, { isAxiosError } from "axios";
 import toast from "react-hot-toast";
@@ -21,13 +22,14 @@ interface User {
   roles: string[]; // Assuming roles is an array of strings
 }
 
-
 interface FormData {
   email: string;
   password: string;
 }
 
-type FormErrors = Record<keyof FormData, string[]> & { [key: string]: string[] };
+type FormErrors = Record<keyof FormData, string[]> & {
+  [key: string]: string[];
+};
 
 type LoginButtonProps = React.ComponentProps<typeof Button>;
 
@@ -40,9 +42,7 @@ const LoginButton = (props: LoginButtonProps) => {
   const [formErrors, setFormErrors] = useState<FormErrors | null | undefined>();
   const [user, setUser] = useState<User | null>(null);
 
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
     setFormErrors((prevState) => {
       if (!prevState) return prevState;
@@ -53,13 +53,15 @@ const LoginButton = (props: LoginButtonProps) => {
 
   const handleSubmit = async () => {
     try {
-      await axios.post(
-        `${process.env.SERVER_URL}/users/login`,
-        formData,
+      await axios.post(`${process.env.SERVER_URL}/users/login`, formData, {
+        withCredentials: true,
+      });
+
+      // Get the users information after login
+      const response = await axios.get<User>(
+        `${process.env.SERVER_URL}/users/me`,
         { withCredentials: true }
       );
-
-      const response = await axios.get<User>(`${process.env.SERVER_URL}/users/me`, { withCredentials: true });
       setUser(response.data);
       setFormErrors(null);
 
@@ -82,8 +84,10 @@ const LoginButton = (props: LoginButtonProps) => {
           onOpen();
           props.onPress && props.onPress(e);
         }}
-      >Login</Button>
-
+      >
+        {user ? "View Profile" : "Login"}
+      </Button>
+      {user && <UserCard user={user} />}
       <Modal isOpen={isOpen} onOpenChange={onOpen} onClose={onClose}>
         <ModalContent>
           <ModalHeader>Login Form</ModalHeader>
@@ -110,6 +114,21 @@ const LoginButton = (props: LoginButtonProps) => {
         </ModalContent>
       </Modal>
     </>
+  );
+};
+
+const UserCard = ({ user }: { user: User }) => {
+  return (
+    <Card>
+      <CardHeader>
+        {user.firstName} {user.lastName}
+      </CardHeader>
+      <CardBody>
+        <p>Username: {user.userName}</p>
+        <p>Email: {user.email}</p>
+      </CardBody>
+      <CardFooter>Roles: {user.roles.join(", ")}</CardFooter>
+    </Card>
   );
 };
 
