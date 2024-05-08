@@ -5,6 +5,10 @@ using System.Security.Claims;
 using System;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using MyBackend.Models;
+using System.Text.Json.Serialization;
+using System.Text.Json;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace MyBackend
 {
@@ -20,8 +24,9 @@ namespace MyBackend
                 options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection"));
             });
 
-            // Add Identity services to the container.
-            builder.Services.AddIdentity<User, Role>(options =>
+            // Add Identity & Authentication services to the container.
+            builder.Services
+                .AddIdentity<User, Role>(options =>
             {
                 // Disable password Validation.
                 options.Password.RequireDigit = false;
@@ -56,8 +61,8 @@ namespace MyBackend
                 options.ClaimsIdentity.EmailClaimType = ClaimTypes.Email;
                 options.ClaimsIdentity.SecurityStampClaimType = ClaimTypes.SerialNumber;
             })
-                    .AddEntityFrameworkStores<ApplicationDbContext>()
-                    .AddDefaultTokenProviders();
+                .AddEntityFrameworkStores<ApplicationDbContext>()
+                .AddDefaultTokenProviders();
 
             builder.Services
                 .AddAuthentication(options =>
@@ -86,12 +91,57 @@ namespace MyBackend
                         ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
                         return ctx.Response.WriteAsJsonAsync(new { message = "Access Denied" });
                     };
-                    options.Events.OnValidatePrincipal = SecurityStampValidator.ValidatePrincipalAsync;
+                    options.Events.OnValidatePrincipal =  (context) => Task.CompletedTask;
                 });
 
-            builder.Services.AddControllers();
+            // Add API services to the container.
+            builder.Services
+                .AddControllers()
+                .AddJsonOptions(options => {
+                options.JsonSerializerOptions.DictionaryKeyPolicy = JsonNamingPolicy.CamelCase;
+                options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+                options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+                options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+                options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.Never;
+            })
+                .ConfigureApiBehaviorOptions(options =>
+            {
+                options.InvalidModelStateResponseFactory = context =>
+                {
+                    var jsonOptions = context.HttpContext.RequestServices.GetService<IOptions<Microsoft.AspNetCore.Mvc.JsonOptions>>()?.Value;
+                    
+                    var errors = context.ModelState.ToDictionary(
+                        kvp => jsonOptions?.JsonSerializerOptions?.DictionaryKeyPolicy?.ConvertName(kvp.Key) ?? kvp.Key,
+                        kvp => kvp.Value?.Errors.Select(e => e.ErrorMessage).ToArray() ?? Array.Empty<string>());
+                   
+                    var problemDetails = new ValidationProblemDetails(errors)
+                    {
+                        Status = StatusCodes.Status400BadRequest,
+                        Title = "One or more validation errors occurred.",
+                        Instance = context.HttpContext.Request.Path
+                    };
+                   
+                    return new BadRequestObjectResult(problemDetails)
+                    {
+                        ContentTypes = { "application/problem+json" }
+                    };
+                };
+            });
 
-            // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+            builder.Services
+                .AddCors(options =>
+                {
+                    options.AddDefaultPolicy(policy =>
+                    {
+                        policy
+                        .SetIsOriginAllowed(origin => true) // allow any origin
+                        .AllowAnyMethod()
+                        .AllowAnyHeader()
+                        .AllowCredentials();
+                    });
+                });
+
+            // Add Swagger documentation services to the container.
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen(options =>
             {
@@ -106,10 +156,12 @@ namespace MyBackend
                 app.UseSwaggerUI();
             }
 
+            app.UseCors(); // Add this line to enable CORS
+
             app.UseHttpsRedirection();
 
+            app.UseAuthentication();
             app.UseAuthorization();
-
 
             app.MapControllers();
 

@@ -34,7 +34,7 @@ namespace MyBackend.Controllers
 
             if (!ModelState.IsValid)
             {
-                return BadRequest(ModelState);
+                return ValidationProblem(ModelState);
             }
 
             // Create the user if does not exist.
@@ -155,11 +155,11 @@ namespace MyBackend.Controllers
             return User.Identity?.IsAuthenticated ?? false;
         }
 
-        [HttpGet("[action]")]
+        [HttpGet("Me")]
         [SwaggerOperation(nameof(GetUserInfo), OperationId = nameof(GetUserInfo), Summary = "Gets the information of the current user.")]
         public async Task<IActionResult> GetUserInfo()
         {
-            var claimsIdentity = User.Identity as ClaimsIdentity;
+            var claimsIdentity = HttpContext.User.Identity as ClaimsIdentity;
             var userId = claimsIdentity?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             var user = await _userManager.FindByIdAsync(userId);
             if (user == null) return NotFound();
